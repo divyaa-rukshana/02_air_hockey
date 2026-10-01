@@ -2,11 +2,11 @@
 GameEngine: owns the puck, both paddles, and the computer AI, and runs
 one frame's worth of game logic.
 
-Task 2 adds scoring and score display. Match timing/end-of-match behavior
-is intentionally left for Task 3.
+Task 3 adds a 30-second match timer and match-ending result handling.
 """
 
 import random
+import pygame
 
 from game.puck import Puck
 from game.paddle import Paddle
@@ -19,6 +19,8 @@ PUCK_RADIUS = 12
 PADDLE_RADIUS = 28
 INITIAL_PUCK_SPEED = 4.5
 
+MATCH_DURATION = 30.0
+
 
 class GameEngine:
     def __init__(self):
@@ -26,13 +28,19 @@ class GameEngine:
         self._launch_puck()
 
         self.player = Paddle(
-            x=WIDTH * 0.15, y=HEIGHT / 2, radius=PADDLE_RADIUS,
-            min_x=MARGIN + PADDLE_RADIUS, max_x=WIDTH / 2 - PADDLE_RADIUS,
-            min_y=MARGIN + PADDLE_RADIUS, max_y=HEIGHT - MARGIN - PADDLE_RADIUS,
+            x=WIDTH * 0.15,
+            y=HEIGHT / 2,
+            radius=PADDLE_RADIUS,
+            min_x=MARGIN + PADDLE_RADIUS,
+            max_x=WIDTH / 2 - PADDLE_RADIUS,
+            min_y=MARGIN + PADDLE_RADIUS,
+            max_y=HEIGHT - MARGIN - PADDLE_RADIUS,
         )
 
         self.computer = Paddle(
-            x=WIDTH * 0.85, y=HEIGHT / 2, radius=PADDLE_RADIUS,
+            x=WIDTH * 0.85,
+            y=HEIGHT / 2,
+            radius=PADDLE_RADIUS,
             min_x=WIDTH / 2 + PADDLE_RADIUS,
             max_x=WIDTH - MARGIN - PADDLE_RADIUS,
             min_y=MARGIN + PADDLE_RADIUS,
@@ -41,9 +49,15 @@ class GameEngine:
 
         self.ai = ComputerAI()
 
-        # Task 2: match scores.
+        # Task 2: scores.
         self.player_score = 0
         self.computer_score = 0
+
+        # Task 3: match timer/state.
+        self.match_start_time = pygame.time.get_ticks()
+        self.match_time_remaining = MATCH_DURATION
+        self.match_over = False
+        self.result = None
 
     def _launch_puck(self):
         angle_choices = [0.3, 0.6, -0.3, -0.6]
@@ -54,7 +68,9 @@ class GameEngine:
         self.puck.vy = INITIAL_PUCK_SPEED * vy_factor
 
     def handle_input(self, keys_pressed):
-        import pygame
+        # Do not allow player movement after the match has ended.
+        if self.match_over:
+            return
 
         dx = dy = 0
 
@@ -73,6 +89,16 @@ class GameEngine:
         self.player.move_by(dx, dy)
 
     def update(self):
+        # Once the match has ended, the entire game state is frozen.
+        if self.match_over:
+            return
+
+        self._update_timer()
+
+        # The timer may have expired during _update_timer().
+        if self.match_over:
+            return
+
         self.ai.update(self.computer, self.puck)
 
         self.puck.move()
@@ -84,40 +110,79 @@ class GameEngine:
 
         self._handle_goals()
 
+    def _update_timer(self):
+        """
+        Update the remaining match time using real elapsed time.
+
+        pygame.time.get_ticks() is used instead of frame counting so the
+        match lasts 30 real seconds regardless of the frame rate.
+        """
+        current_time = pygame.time.get_ticks()
+
+        elapsed_seconds = (
+            current_time - self.match_start_time
+        ) / 1000.0
+
+        self.match_time_remaining = max(
+            0.0,
+            MATCH_DURATION - elapsed_seconds,
+        )
+
+        if self.match_time_remaining <= 0.0:
+            self.match_time_remaining = 0.0
+            self._end_match()
+
+    def _end_match(self):
+        """Stop the match and determine its final result."""
+        if self.match_over:
+            return
+
+        self.match_over = True
+
+        # Stop the puck so nothing continues moving visually after time expires.
+        self.puck.vx = 0.0
+        self.puck.vy = 0.0
+
+        if self.player_score > self.computer_score:
+            self.result = "Player Wins!"
+        elif self.computer_score > self.player_score:
+            self.result = "Computer Wins!"
+        else:
+            self.result = "Draw"
+
     def _handle_goals(self):
         """
         Detect goals and update the appropriate player's score.
 
-        A goal is only awarded once the puck has completely passed through
-        the goal opening. Contact with the wall outside the opening causes
-        a normal bounce instead.
+        A goal is awarded only after the puck has completely passed through
+        the goal opening.
         """
 
-        # Left goal:
-        # The puck must be completely beyond the left edge of the table.
+        # Left goal: Computer scores.
         if self.puck.x + self.puck.radius < 0:
             if GOAL_TOP < self.puck.y < GOAL_BOTTOM:
-                # Player's opponent scored.
                 self.computer_score += 1
                 self._reset_puck()
             else:
-                # Outside the goal opening: bounce from the wall.
                 self.puck.x = MARGIN + self.puck.radius
                 self.puck.vx = -self.puck.vx
 
-        # Right goal:
-        # The puck must be completely beyond the right edge of the table.
+        # Right goal: Player scores.
         elif self.puck.x - self.puck.radius > WIDTH:
             if GOAL_TOP < self.puck.y < GOAL_BOTTOM:
-                # Player scored.
                 self.player_score += 1
                 self._reset_puck()
             else:
-                # Outside the goal opening: bounce from the wall.
                 self.puck.x = WIDTH - MARGIN - self.puck.radius
                 self.puck.vx = -self.puck.vx
 
     def _reset_puck(self):
+        """
+        Reset the puck to the center.
+
+        Task 4 will change this so the puck immediately launches again
+        after a goal.
+        """
         self.puck.x = WIDTH / 2
         self.puck.y = HEIGHT / 2
         self.puck.vx = 0
@@ -125,28 +190,37 @@ class GameEngine:
 
     def get_winner(self):
         """
-        Return the current score result.
+        Return the current/final match result.
 
-        Task 3 will use this when the 30-second match ends.
+        Before the match ends, return None.
         """
-        if self.player_score > self.computer_score:
-            return "Player"
+        if not self.match_over:
+            return None
 
-        if self.computer_score > self.player_score:
-            return "Computer"
+        return self.result
 
-        return "Draw"
+    def is_match_over(self):
+        """Return True once the 30-second match has ended."""
+        return self.match_over
 
     def draw(self, surface, font):
         from game import renderer
 
         renderer.draw_table(surface)
 
+        # Task 2: score display.
         renderer.draw_score(
             surface,
             font,
             self.player_score,
             self.computer_score,
+        )
+
+        # Task 3: countdown timer.
+        renderer.draw_timer(
+            surface,
+            font,
+            self.match_time_remaining,
         )
 
         renderer.draw_paddle(
@@ -161,4 +235,15 @@ class GameEngine:
             renderer.COLOR_COMPUTER,
         )
 
-        renderer.draw_puck(surface, self.puck)
+        renderer.draw_puck(
+            surface,
+            self.puck,
+        )
+
+        # Task 3: final result.
+        if self.match_over:
+            renderer.draw_result(
+                surface,
+                font,
+                self.result,
+            )

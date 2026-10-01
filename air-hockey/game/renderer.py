@@ -62,7 +62,12 @@ def draw_table(surface):
     pygame.draw.rect(
         surface,
         COLOR_WALL,
-        (0, MARGIN, MARGIN, GOAL_TOP - MARGIN),
+        (
+            0,
+            MARGIN,
+            MARGIN,
+            GOAL_TOP - MARGIN,
+        ),
     )
 
     pygame.draw.rect(
@@ -143,6 +148,46 @@ def draw_score(surface, font, player_score, computer_score):
 
     surface.blit(player_text, player_rect)
     surface.blit(computer_text, computer_rect)
+
+
+def draw_timer(surface, font, time_remaining):
+    """Draw the remaining match time."""
+
+    seconds_remaining = max(
+        0,
+        int(time_remaining + 0.999),
+    )
+
+    timer_text = font.render(
+        f"Time: {seconds_remaining}",
+        True,
+        COLOR_TEXT,
+    )
+
+    timer_rect = timer_text.get_rect(
+        midtop=(WIDTH / 2, 2)
+    )
+
+    surface.blit(timer_text, timer_rect)
+
+
+def draw_result(surface, font, result):
+    """Display the final match result."""
+
+    surf = font.render(
+        result,
+        True,
+        (255, 220, 80),
+    )
+
+    rect = surf.get_rect(
+        center=(
+            surface.get_width() // 2,
+            surface.get_height() // 2,
+        )
+    )
+
+    surface.blit(surf, rect)
 
 
 def draw_text(surface, font, text, pos, color=COLOR_TEXT):
