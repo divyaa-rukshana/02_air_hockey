@@ -2,7 +2,7 @@
 GameEngine: owns the puck, both paddles, and the computer AI, and runs
 one frame's worth of game logic.
 
-Task 3 adds a 30-second match timer and match-ending result handling.
+Task 4 adds immediate puck relaunch after every goal.
 """
 
 import random
@@ -178,15 +178,22 @@ class GameEngine:
 
     def _reset_puck(self):
         """
-        Reset the puck to the center.
+        Reset the puck to the center and immediately launch it again.
 
-        Task 4 will change this so the puck immediately launches again
-        after a goal.
+        Task 4: the puck no longer remains stationary after a goal.
         """
+
+        # Place the puck exactly at the center.
         self.puck.x = WIDTH / 2
         self.puck.y = HEIGHT / 2
-        self.puck.vx = 0
-        self.puck.vy = 0
+
+        # Reset the previous position as well so Task 1's swept collision
+        # detection starts from the new center position.
+        self.puck.previous_x = self.puck.x
+        self.puck.previous_y = self.puck.y
+
+        # Immediately give the puck a new clean direction and velocity.
+        self._launch_puck()
 
     def get_winner(self):
         """
